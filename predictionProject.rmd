@@ -189,7 +189,20 @@ Since accuracy is 0.9835174172, out of sample error rate is = 1 - 0.9835174172 =
 #Prediction on Testing Set
 
 ```{r}
-predTest <- predict(modFit,newdata=testing)
-predTest
+
+# I forgot to go through the data transformation process before trying to fit the model on the new data set, 
+# i.e., I should have standarized the data as I did for the training data set
+
+# Once this fixed, the result from preTest is now correct.
+
+#####################################################################
+ testTransformed <- predict(preObj, testing[, -160])
+ testing[, -160] <- testTransformed
+#####################################################################
+ 
+ predTest <- predict(modFit,newdata=testing)
+ predTest
+
+
 ```
 
