@@ -7,11 +7,13 @@ output: html_document
 
 #Executive Summary
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Given a set of weight lifting exercise measures, recorded by wearable devices, the project is aiming to predict how well an activity was performed by wearers.
 
-Given a set of weight lifting exercise measures, the project is aiming to predict how well, in term of the quality level of execution, an activity was performed by the wearer. 
 
 #Data Source
+
+Both training dataset and testing dataset come from the Human Activity Recognition project. They were collected on 8 hours of activities of 4 healthy subjects, performing 5 classes of exercises: sitting-down, standing-up, standing, walking, and sitting.
+
 
 
 ```{r}
@@ -25,8 +27,6 @@ library(doParallel)
 
 ```{r}
 urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
-#x <- getURL(url, ssl.verifypeer = FALSE)
-#pml <- read.csv(textConnection(x))
 pml <- read.csv(urlTrain)
 
 urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
@@ -34,20 +34,12 @@ testing <- read.csv(urlTest)
 ```
 
 
-#Data Cleaning and Exploration
+#Data Exploration and Cleaning
 
-It is important to have the data cleaned before the modelling process begins.
-
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r}
 toomanyNA <- function(x){
   sum(is.na(x)) / length(x) > 0.95
-}
-
-getColor <- function(x){
-  grep(x, c("A", "B", "C", "D", "E"))
 }
 
 
@@ -56,7 +48,19 @@ countNA <- function(x){
 }
 ```
 
-##Remove zero and near zero variance predictors
+
+```{r}
+dim(pml)
+str(pml)
+summary(pml[, 2:6])
+hist(pml$magnet_arm_x)
+```
+
+A quick exploration reveals: the dataset has 160 variables and 19622 observations. The scale of its variables very. Possibly a lot of them are not normally distributed. Some of the variables have many missing values.
+
+The following steps are taken to make sure that the preditive model works well.
+
+## (1) Remove zero and near zero variance predictors
 
 This step is eliminate the predictors which only one unique or very few values before modelling starts. Their existance is likely to cause the model to crush. 
 
@@ -67,7 +71,7 @@ filteredPml <- pml[, -idxNzv]
 ```
 
 
-##Remove predictors containing mostly NAs
+## (2) Remove predictors containing mostly NAs
 
 There are a lot of variables in which the values are 98% NAs. They don't contribute much to the response/outcome.
 
@@ -75,13 +79,11 @@ Also if there is missing data in the variables in caret package, it won't return
 
 ```{r}
 NAVec <- sapply(filteredPml, toomanyNA)
-#NAColNames <- names(NAVec[NAVec])
-#filteredPml <- filteredPml[, !(names(filteredPml) %in% NAColNames)]
 filteredPml <- filteredPml[, !NAVec]
 ```
 
 
-##imputing
+## (3) imputing
 
 Missing data, should be imputed as Prediction algorithms are built not to handle them in most cases.
 
@@ -89,25 +91,29 @@ Missing data, should be imputed as Prediction algorithms are built not to handle
 NAVec <- sapply(filteredPml, countNA)
 NAVec[NAVec>0]
 ```
-None of the variables have NA values.
+
+The result shows that none of the remaining variables have NA values.
 
 
-##Remove predictors irrelevant to the outcome variable
+## (4)Remove predictors irrelevant to the outcome variable
 
 A few of the variables, such as user names and time stamps, are not relevant to the response/outcome
 
 
 ```{r}
+filteredPml[,1:6]
 filteredPml <- filteredPml[, -(1:6)]
 ```
 
 
-# show a correlation plot here
+## (5)Remove highly correlated variables
+
+Some predictive models may benefit from reducing the level of correlation between the predictors. Also these highly correlated variables might cause overfitting. 
+
 
 ```{r}
 descrCor <- cor(filteredPml[, -53])
 
-# find attributes that are highly corrected (ideally >0.75)
 highlyCorDescr <- findCorrelation(descrCor, cutoff = 0.5)
 
 names(filteredPml)[highlyCorDescr]
@@ -118,8 +124,10 @@ classeIdx <- ncol(filteredPml)
 ```
 
 
+#Modeling Process
 
-#Data Splitting
+
+## (1)Data Splitting
 
 ```{r}
 set.seed(3456)
@@ -130,7 +138,10 @@ validSet <- filteredPml[-inTrain, ]
 
 
 
-#Data Standarization
+## (2) Data Standarization
+
+As mentioned earlier in data exploration, a lot of variables are in different scales or very skewed.
+
 
 ```{r}
 preObj <- preProcess(trainSet[,-classeIdx], method = c("center", "scale"))
@@ -140,11 +151,13 @@ trainSet[,-classeIdx] <- trainTransformed
 validTransformed <- predict(preObj, validSet[,-classeIdx])
 validSet[,-classeIdx] <- validTransformed
 
-## show proof
 ```
 
 
-##use cross validation to avoid over-fitting when buiding random forests.
+## (3) Data resampling and model fitting
+
+Instead of using the default resampling method, bootstrapping, 10-fold cross-validation is applied here. Also by using allowParallel,  accuracy analysis can be done across a series of training runs. 
+
 
 ```{r}
 cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
@@ -160,12 +173,16 @@ stopCluster(cluster)
 
 #Model performance
 
+
 ```{r}
 preds <- predict(modFit, newdata=validSet)
 
 M <- confusionMatrix(preds, validSet$classe)
+M$overall
 accuracy <- M$overall[1]
 ```
+
+Since accuracy is 0.9835174172, out of sample error rate is = 1 - 0.9835174172 = 0.016
 
 
 #Prediction on Testing Set
@@ -175,22 +192,3 @@ predTest <- predict(modFit,newdata=testing)
 predTest
 ```
 
-```{r}
-#rf<-randomForest(classe ~ .,data=trainSet)
-#impVars <- importance(rf)
-#impVars <- as.data.frame(impVars)
-
-#impVars$varname <- rownames(impVars)
-#impVars %>% arrange(-MeanDecreaseGini)
-
-```
-
-
-```{r}
-#preProc <- preProcess(filteredPml[,-32], method="pca", pcaComp=2)
-#thePC <- predict(preProc, filteredPml[,-32])
-#ggplot(data=thePC, aes(x=PC1, y=PC2, colour=typeColor)) + geom_point()
-```
-
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
