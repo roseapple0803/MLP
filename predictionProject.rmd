@@ -1,0 +1,196 @@
+---
+title: "Prediction Assignment"
+author: "Jennifer Yueh"
+date: "Saturday, August 27, 2016"
+output: html_document
+---
+
+#Executive Summary
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+Given a set of weight lifting exercise measures, the project is aiming to predict how well, in term of the quality level of execution, an activity was performed by the wearer. 
+
+#Data Source
+
+
+```{r}
+#library(RCurl)
+library(ggplot2)
+library(caret)
+library(parallel)
+library(doParallel)
+```
+
+
+```{r}
+urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+#x <- getURL(url, ssl.verifypeer = FALSE)
+#pml <- read.csv(textConnection(x))
+pml <- read.csv(urlTrain)
+
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testing <- read.csv(urlTest)
+```
+
+
+#Data Cleaning and Exploration
+
+It is important to have the data cleaned before the modelling process begins.
+
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+toomanyNA <- function(x){
+  sum(is.na(x)) / length(x) > 0.95
+}
+
+getColor <- function(x){
+  grep(x, c("A", "B", "C", "D", "E"))
+}
+
+
+countNA <- function(x){
+  sum(is.na(x))
+}
+```
+
+##Remove zero and near zero variance predictors
+
+This step is eliminate the predictors which only one unique or very few values before modelling starts. Their existance is likely to cause the model to crush. 
+
+```{r, echo=FALSE}
+nzv <- nearZeroVar(pml, saveMetrics = TRUE)
+idxNzv <- which(nzv$nzv)
+filteredPml <- pml[, -idxNzv]
+```
+
+
+##Remove predictors containing mostly NAs
+
+There are a lot of variables in which the values are 98% NAs. They don't contribute much to the response/outcome.
+
+Also if there is missing data in the variables in caret package, it won't return a prediction.
+
+```{r}
+NAVec <- sapply(filteredPml, toomanyNA)
+#NAColNames <- names(NAVec[NAVec])
+#filteredPml <- filteredPml[, !(names(filteredPml) %in% NAColNames)]
+filteredPml <- filteredPml[, !NAVec]
+```
+
+
+##imputing
+
+Missing data, should be imputed as Prediction algorithms are built not to handle them in most cases.
+
+```{r}
+NAVec <- sapply(filteredPml, countNA)
+NAVec[NAVec>0]
+```
+None of the variables have NA values.
+
+
+##Remove predictors irrelevant to the outcome variable
+
+A few of the variables, such as user names and time stamps, are not relevant to the response/outcome
+
+
+```{r}
+filteredPml <- filteredPml[, -(1:6)]
+```
+
+
+# show a correlation plot here
+
+```{r}
+descrCor <- cor(filteredPml[, -53])
+
+# find attributes that are highly corrected (ideally >0.75)
+highlyCorDescr <- findCorrelation(descrCor, cutoff = 0.5)
+
+names(filteredPml)[highlyCorDescr]
+
+filteredPml <- filteredPml[, -highlyCorDescr]
+
+classeIdx <- ncol(filteredPml)
+```
+
+
+
+#Data Splitting
+
+```{r}
+set.seed(3456)
+inTrain <- createDataPartition(filteredPml$classe, p=0.7, list=FALSE, times=1)
+trainSet <- filteredPml[inTrain, ]
+validSet <- filteredPml[-inTrain, ]
+```
+
+
+
+#Data Standarization
+
+```{r}
+preObj <- preProcess(trainSet[,-classeIdx], method = c("center", "scale"))
+trainTransformed <- predict(preObj, trainSet[,-classeIdx])
+trainSet[,-classeIdx] <- trainTransformed
+
+validTransformed <- predict(preObj, validSet[,-classeIdx])
+validSet[,-classeIdx] <- validTransformed
+
+## show proof
+```
+
+
+##use cross validation to avoid over-fitting when buiding random forests.
+
+```{r}
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+set.seed(33833)
+fitControl <- trainControl(method='cv', number=10, allowParallel = TRUE)
+modFit <- train(classe ~ ., data=trainSet, method='rf', trControl=fitControl)
+
+stopCluster(cluster)
+```
+
+
+#Model performance
+
+```{r}
+preds <- predict(modFit, newdata=validSet)
+
+M <- confusionMatrix(preds, validSet$classe)
+accuracy <- M$overall[1]
+```
+
+
+#Prediction on Testing Set
+
+```{r}
+predTest <- predict(modFit,newdata=testing)
+predTest
+```
+
+```{r}
+#rf<-randomForest(classe ~ .,data=trainSet)
+#impVars <- importance(rf)
+#impVars <- as.data.frame(impVars)
+
+#impVars$varname <- rownames(impVars)
+#impVars %>% arrange(-MeanDecreaseGini)
+
+```
+
+
+```{r}
+#preProc <- preProcess(filteredPml[,-32], method="pca", pcaComp=2)
+#thePC <- predict(preProc, filteredPml[,-32])
+#ggplot(data=thePC, aes(x=PC1, y=PC2, colour=typeColor)) + geom_point()
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
