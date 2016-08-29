@@ -7,7 +7,7 @@ output: html_document
 
 #Executive Summary
 
-Given a set of weight lifting exercise measures, recorded by wearable devices, the project is aiming to predict how well an activity was performed by wearers.
+Given a set of weight lifting exercise measures, recorded by wearable devices, the project is aiming to predict the 'classe' variable in the data set, which is associated with how well an activity was performed by wearers.
 
 
 #Data Source
@@ -101,7 +101,6 @@ A few of the variables, such as user names and time stamps, are not relevant to 
 
 
 ```{r}
-filteredPml[,1:6]
 filteredPml <- filteredPml[, -(1:6)]
 ```
 
@@ -157,6 +156,8 @@ validSet[,-classeIdx] <- validTransformed
 ## (3) Data resampling and model fitting
 
 Instead of using the default resampling method, bootstrapping, 10-fold cross-validation is applied here. Also by using allowParallel,  accuracy analysis can be done across a series of training runs. 
+
+Random forests algorithm is used here as it is one of the best among classification algorithms - able to classify large amounts of data with accuracy.
 
 
 ```{r}
